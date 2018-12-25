@@ -16,4 +16,5 @@ build-examples: install build
 	rm -rf dist > /dev/null
 	mkdir dist
 	$(MAKE) build-example EXAMPLE=Minimal
-	$(MAKE) build-example EXAMPLE=Basic
+	$(MAKE) build-example EXAMPLE=BackgroundColor
+	$(MAKE) build-example EXAMPLE=Shaders

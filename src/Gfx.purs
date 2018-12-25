@@ -1,70 +1,110 @@
 module Gfx
   ( App(..)
   , Config(..)
-  , EffModel(..)
   , Renderer(..)
+  , RenderFn
   , def
   , class Default
-  , DefaultApp
-  , DefaultRenderer
   , run
-  , noEffects
-  , onlyEffects
+  , Err
   )
 where
 
 import Prelude
 
-import Control.Monad.Aff (Aff)
+import Control.Monad.Aff (Aff, launchAff)
 import Control.Monad.Eff (Eff)
+import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Exception (throw, message, try)
+import Control.Monad.Except.Trans (ExceptT, runExceptT)
+import Data.Bifunctor (lmap)
+import Data.Either (Either(Right, Left))
 import Data.Maybe (Maybe(..))
-import Data.Typelevel.Undefined (undefined)
-import Graphics.WebGLAll (Shaders(Shaders), WebGLProg, WebGl)
-import Signal (Signal)
+import Data.Newtype (wrap)
+import Graphics.WebGLAll (Shaders(Shaders), WebGLProg, WebGl, WebGLContext)
+import Graphics.WebGLAll as WebGl
+import Signal (Signal, foldp, runSignal, (~>))
 
-
--- |
-newtype EffModel st evt eff =
-  EffModel { state :: st, effects :: Aff eff (Maybe evt) }
 
 -- | Defines a structured WebGl program
-type App st evt pic eff =
+type App st evt pic =
   { init :: st
-  , update :: evt -> st -> EffModel st evt eff
+  , update :: evt -> st -> st
   , view :: st -> pic
   , signal :: Signal evt
   }
 
 -- |
 type Renderer pic bind eff =
-  { render ::
-      { webGLProgram :: WebGLProg | bind }
-      -> pic
-      -> Eff (webgl :: WebGl | eff) Unit
+  { render :: RenderFn pic bind eff
   , shaders :: Shaders { | bind }
   }
 
 -- |
+type RenderFn pic bind eff =
+  { webGLProgram :: WebGLProg | bind }
+  -> pic
+  -> Eff (webgl :: WebGl | eff) Unit
+
+-- |
 type Config st evt pic bind eff =
   { canvasId :: String
-  , app :: App st evt pic eff
+  , app :: App st evt pic
   , renderer :: Renderer pic bind eff
   }
+
+-- | WebGl related errors.
+data Err = ErrRun String | ErrShaders String | ErrAsync
 
 -- | Run the app.
 run :: forall st evt pic eff bind.
   Config st evt pic bind eff
+  -> (Err -> Eff ( webgl :: WebGl | eff) Unit)
   -> Eff ( webgl :: WebGl | eff ) Unit
-run = undefined
+run config handleError = map (const unit) $ launchAff $ do
+  result <- runExceptT $ run' config
+  case result of
+    Left err -> liftEff $ handleError err
+    Right _ -> pure unit
 
--- | Create an `EffModel` with no effects from a given state.
-noEffects :: forall st evt eff. st -> EffModel st evt eff
-noEffects = undefined
+-- | Run the app as `ExceptT`.
+run' :: forall st evt pic bind eff.
+  Config st evt pic bind eff -> ExceptT Err (Aff ( webgl ∷ WebGl | eff )) Unit
+run'
+  { canvasId
+  , app : { init, update, view, signal }
+  , renderer : { render, shaders }
+  } = do
+    context <- runWebGL canvasId
+    bindings <- withShaders shaders
+    liftEff $ do
+      runSignal (sigState ~> (\state -> render bindings $ view state))
+      render bindings (view init)
+    where
+      sigState = foldp update init signal
 
--- | Create an `EffModel` with only effects from a given state.
-onlyEffects :: forall st evt eff. st -> EffModel st evt eff
-onlyEffects = undefined
+--|
+runWebGL :: forall eff.
+  String
+  -> ExceptT Err (Aff ( webgl ∷ WebGl | eff )) WebGLContext
+runWebGL str =
+  WebGl.runWebGL str throw pure
+   #  try
+  <#> lmap (message >>> ErrRun)
+   #  liftEff
+   #  wrap
 
+-- |
+
+withShaders :: forall eff a.
+  Shaders { | a }
+  -> ExceptT Err (Aff ( webgl :: WebGl | eff )) { webGLProgram :: WebGLProg | a }
+withShaders shaders =
+  WebGl.withShaders shaders throw pure
+   #  try
+  <#> lmap (message >>> ErrShaders)
+   #  liftEff
+   #  wrap
 
 -- Defaults
 
@@ -75,10 +115,7 @@ instance defaultUnit :: Default Unit where
   def = unit
 
 instance defaultFn :: (Default b) => Default (a -> b) where
-  def = def
-
-instance defaultEffModel :: (Default st) => Default (EffModel st evt eff) where
-  def = EffModel { state : def, effects : def }
+  def _ = def
 
 instance defaultAff :: (Default a) => Default (Aff eff a) where
   def = pure def
@@ -96,7 +133,3 @@ instance defaultShaders :: Default (Shaders { | bind }) where
   def = Shaders defShader defShader
     where
       defShader = "void main(void) {}"
-
-type DefaultApp = forall eff bind. App Unit Unit Unit eff
-
-type DefaultRenderer = forall eff bind. Renderer Unit bind eff
