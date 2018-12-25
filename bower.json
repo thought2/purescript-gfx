@@ -1,0 +1,40 @@
+{
+  "name": "purescript-gfx",
+  "homepage": "",
+  "authors": [
+    "Michael Bock"
+  ],
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thought2/purescript-gfx"
+  },
+  "keywords": [],
+  "license": "Apache-2.0",
+  "ignore": [
+    "**/.*",
+    "test",
+    "bower_components",
+    "node_modules",
+    "output",
+    "out",
+    "tmp",
+    "bower.json",
+    "package.json"
+  ],
+  "dependencies": {
+    "purescript-signal": "^9.0.0",
+    "purescript-webgl": "^2.0.1",
+    "purescript-prelude": "^3.3.0",
+    "purescript-aff": "^4.1.1"
+  },
+  "resolutions": {
+    "purescript-arraybuffer-types": "^2.0.0",
+    "purescript-js-date": "^5.2.0"
+  },
+  "devDependencies": {
+    "purescript-psci-support": "^3.0.0",
+    "purescript-typelevel": "^3.0.0",
+    "purescript-debug": "^3.0.0"
+  }
+}
