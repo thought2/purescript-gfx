@@ -1,7 +1,9 @@
-module Shaders where
+module Basic where
 
-import Graphics.WebGLAll (Attribute, Mat4, Shaders(Shaders), Uniform)
+import Control.Monad.Eff.Console (log)
+import Graphics.WebGLAll (Attribute, Shaders(Shaders))
 import Graphics.WebGLAll as Gl
+
 
 vertexShader :: String
 vertexShader =
@@ -29,3 +31,5 @@ shaders ::
     { aVertexPosition :: Attribute Gl.Vec3
     }
 shaders = Shaders fragmentShader vertexShader
+
+main = log "basic example"
