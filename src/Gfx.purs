@@ -5,6 +5,7 @@ module Gfx
   , Renderer(..)
   , def
   , class Default
+  , DefaultApp
   , run
   , noEffects
   , onlyEffects
@@ -19,6 +20,7 @@ import Data.Maybe (Maybe(..))
 import Data.Typelevel.Undefined (undefined)
 import Graphics.WebGLAll (Shaders(Shaders), WebGLProg, WebGl)
 import Signal (Signal)
+
 
 -- |
 newtype EffModel st evt eff =
@@ -45,11 +47,10 @@ newtype Renderer pic bind eff =
     }
 
 -- |
-newtype Config st evt pic bind eff =
-  Config
-    { canvasId :: String
-    , app :: App st evt pic bind eff
-    }
+type Config st evt pic bind eff =
+  { canvasId :: String
+  , app :: App st evt pic bind eff
+  }
 
 -- | Run the app.
 run :: forall st evt pic eff bind.
@@ -65,10 +66,16 @@ noEffects = undefined
 onlyEffects :: forall st evt eff. st -> EffModel st evt eff
 onlyEffects = undefined
 
+
+-- Defaults
+
 class Default a where
   def :: a
 
-instance defaultApp :: (Default st, Default evt, Default pic) => Default (App st evt pic eff bind) where
+instance defaultApp ::
+  (Default st, Default evt, Default pic)
+  => Default (App st evt pic eff bind)
+  where
   def = App
     { init : def
     , update : def
@@ -82,15 +89,6 @@ instance defaultRenderer :: Default (Renderer pic bind eff) where
     { render : def
     , shaders : def
     }
-
-instance defaultConfig :: Default (Config Unit Unit Unit bind eff) where
-  def = Config
-    { canvasId : def
-    , app : def
-    }
-
-instance defaultString :: Default String where
-  def = ""
 
 instance defaultUnit :: Default Unit where
   def = unit
@@ -114,7 +112,8 @@ instance defaultSignal :: Default a => Default (Signal a) where
   def = pure def
 
 instance defaultShaders :: Default (Shaders { | bind }) where
-  -- @TODO: add default shader strings
-  def = Shaders "" ""
+  def = Shaders defShader defShader
+    where
+      defShader = "void main(void) {}"
 
 type DefaultApp = forall eff bind. App Unit Unit Unit bind eff
