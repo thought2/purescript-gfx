@@ -7,11 +7,13 @@ module Gfx
   , class Default
   , run
   , Err
+  , Shaders
   , errMessage
   , defaultApp
   , defaultConfig'
   , defaultConfig
   , defaultRenderer
+  , defaultShaders
   )
 where
 
@@ -27,12 +29,12 @@ import Data.Bifunctor (lmap)
 import Data.Either (Either(Right, Left))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (wrap)
-import Graphics.WebGLAll (Shaders(Shaders), WebGLProg, WebGl, WebGLContext)
+import Graphics.WebGLAll (WebGLProg, WebGl, WebGLContext)
 import Graphics.WebGLAll as WebGl
 import Signal (Signal, foldp, runSignal, (~>))
 
 
--- | Defines a structured WebGl program
+-- | Defines a structured WebGl program.
 type App st evt pic =
   { init :: st
   , update :: evt -> st -> st
@@ -40,17 +42,22 @@ type App st evt pic =
   , signal :: Signal evt
   }
 
--- |
+-- | A combination of a render function and some shaders.
 type Renderer pic bind eff =
   { render :: RenderFn pic bind eff
   , shaders :: Shaders { | bind }
   }
 
--- |
+-- | Takes a custom `pic` type (emitted by `App`) and the shader's bindings.
 type RenderFn pic bind eff =
   { webGLProgram :: WebGLProg | bind }
   -> pic
   -> Eff (webgl :: WebGl | eff) Unit
+
+type Shaders bind =
+  { vertex :: String
+  , fragment :: String
+  }
 
 -- | WebGl related errors.
 data Err = ErrRun String | ErrShaders String | ErrAsync
@@ -86,10 +93,10 @@ run' :: forall st evt pic bind eff.
 run'
   { canvasId
   , app : { init, update, view, signal }
-  , renderer : { render, shaders }
+  , renderer : { render, shaders : { vertex, fragment } }
   } = do
     context <- runWebGL canvasId
-    bindings <- withShaders shaders
+    bindings <- withShaders ((WebGl.Shaders fragment vertex) :: WebGl.Shaders { | bind })
     liftEff $ do
       runSignal (sigState ~> (\state -> render bindings $ view state))
       render bindings (view init)
@@ -106,7 +113,7 @@ run config = map (const unit) $ launchAff $ do
     Left err -> liftEff $ config.handleError err
     Right _ -> pure unit
 
---|
+-- | Wrapper around native `runWebGl`.
 runWebGL :: forall eff.
   String
   -> ExceptT Err (Aff ( webgl ∷ WebGl | eff )) WebGLContext
@@ -117,10 +124,9 @@ runWebGL str =
    #  liftEff
    #  wrap
 
--- |
-
+-- | Wrapper around native `withShaders`.
 withShaders :: forall eff a.
-  Shaders { | a }
+  WebGl.Shaders { | a }
   -> ExceptT Err (Aff ( webgl :: WebGl | eff )) { webGLProgram :: WebGLProg | a }
 withShaders shaders =
   WebGl.withShaders shaders throw pure
@@ -152,11 +158,6 @@ instance defaultMaybe :: Default (Maybe a) where
 instance defaultSignal :: Default a => Default (Signal a) where
   def = pure def
 
-instance defaultShaders :: Default (Shaders { | bind }) where
-  def = Shaders defShader defShader
-    where
-      defShader = "void main(void) {}"
-
 instance defaultString :: Default String where
   def = ""
 
@@ -172,7 +173,7 @@ defaultApp =
 defaultRenderer :: forall pic bind eff. Renderer pic bind eff
 defaultRenderer =
   { render : def
-  , shaders : def
+  , shaders : defaultShaders
   }
 
 defaultConfig' :: forall st evt pic bind eff.
@@ -192,3 +193,11 @@ defaultConfig =
   , renderer : defaultRenderer
   , handleError : errMessage >>> log
   }
+
+defaultShaders :: forall bind. Shaders bind
+defaultShaders =
+  { vertex : defaultShader
+  , fragment : defaultShader
+  }
+  where
+    defaultShader = "void main(void) {}"

@@ -7,8 +7,8 @@ install:
 build: install
 	pulp build
 
-build-example: install build
-	mkdir dist/$(EXAMPLE)
+build-example:
+	if [ ! -d dist/$(EXAMPLE) ] ; then mkdir dist/$(EXAMPLE); fi
 	cp -r examples/public/* -t dist/$(EXAMPLE)
 	pulp browserify -I examples --main $(EXAMPLE) --to dist/$(EXAMPLE)/main.js
 
@@ -17,4 +17,5 @@ build-examples: install build
 	mkdir dist
 	$(MAKE) build-example EXAMPLE=Minimal
 	$(MAKE) build-example EXAMPLE=BackgroundColor
+	$(MAKE) build-example EXAMPLE=Points
 	$(MAKE) build-example EXAMPLE=Shaders
