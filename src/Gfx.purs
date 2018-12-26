@@ -3,6 +3,8 @@ module Gfx
   , Config(..)
   , Renderer(..)
   , RenderFn
+  , ViewFn
+  , UpdateFn
   , def
   , class Default
   , run
@@ -34,11 +36,11 @@ import Graphics.WebGLAll as WebGl
 import Signal (Signal, foldp, runSignal, (~>))
 
 
--- | Defines a structured WebGl program.
+-- | Defines a structured WebGl program as a state machine.
 type App st evt pic =
   { init :: st
-  , update :: evt -> st -> st
-  , view :: st -> pic
+  , update :: UpdateFn st evt
+  , view :: ViewFn st pic
   , signal :: Signal evt
   }
 
@@ -48,12 +50,19 @@ type Renderer pic bind eff =
   , shaders :: Shaders { | bind }
   }
 
--- | Takes a custom `pic` type (emitted by `App`) and the shader's bindings.
+-- | Turn the state into a picture, that can be rendered later.
+type ViewFn st pic = st -> pic
+
+-- | Renders the picture with an Effect.
 type RenderFn pic bind eff =
   { webGLProgram :: WebGLProg | bind }
   -> pic
   -> Eff (webgl :: WebGl | eff) Unit
 
+-- | State updater, based on event and previous state.
+type UpdateFn st evt = evt -> st -> st
+
+-- | More verbose replacement for the native `Shader` type.
 type Shaders bind =
   { vertex :: String
   , fragment :: String
@@ -62,17 +71,7 @@ type Shaders bind =
 -- | WebGl related errors.
 data Err = ErrRun String | ErrShaders String | ErrAsync
 
--- | Convert `Err` to human readable error message.
-errMessage :: Err -> String
-errMessage err =
-  case err of
-    ErrRun msg -> format "ErrRun" (Just msg)
-    ErrShaders msg -> format "ErrShader" (Just msg)
-    ErrAsync -> format "ErrAsync" Nothing
-  where
-    format name msg = "ERROR: " <> name <> "\n" <> maybe "" id msg
-
--- | Config used for `run` (Error handling: `ExceptT`).
+-- | Config used for `run'` (Error handling: `ExceptT`).
 type Config' st evt pic bind eff =
   { canvasId :: String
   , app :: App st evt pic
@@ -87,7 +86,17 @@ type Config st evt pic bind eff =
   , handleError :: Err -> Eff ( webgl :: WebGl | eff) Unit
   }
 
--- | Run the app as `ExceptT`.
+-- | Convert `Err` to human readable error message.
+errMessage :: Err -> String
+errMessage err =
+  case err of
+    ErrRun msg -> format "ErrRun" (Just msg)
+    ErrShaders msg -> format "ErrShader" (Just msg)
+    ErrAsync -> format "ErrAsync" Nothing
+  where
+    format name msg = "ERROR: " <> name <> "\n" <> maybe "" id msg
+
+-- | Run the config as `ExceptT`.
 run' :: forall st evt pic bind eff.
   Config st evt pic bind eff -> ExceptT Err (Aff ( webgl ∷ WebGl | eff )) Unit
 run'
@@ -103,7 +112,7 @@ run'
     where
       sigState = foldp update init signal
 
--- | Run the app.
+-- | Run the config.
 run :: forall st evt pic eff bind.
   Config st evt pic bind eff
   -> Eff ( webgl :: WebGl | eff ) Unit
@@ -161,8 +170,8 @@ instance defaultSignal :: Default a => Default (Signal a) where
 instance defaultString :: Default String where
   def = ""
 
-defaultApp :: forall st evt pic.
-  Default st => Default evt => Default pic => App st evt pic
+-- | Default dummy state machine.
+defaultApp :: forall st evt pic. App Unit Unit Unit
 defaultApp =
   { init : def
   , update : def
@@ -170,23 +179,27 @@ defaultApp =
   , signal : def
   }
 
+-- | A dummy renderer, that renders nothing.
 defaultRenderer :: forall pic bind eff. Renderer pic bind eff
 defaultRenderer =
   { render : def
   , shaders : defaultShaders
   }
 
+-- | Some defaults, providing only dummy implementations for state, event and
+-- | picture as `Unit`.
 defaultConfig' :: forall st evt pic bind eff.
-  Default st => Default evt => Default pic => Config' st evt pic bind eff
+  Config' Unit Unit Unit bind eff
 defaultConfig' =
   { canvasId : def
   , app : defaultApp
   , renderer : defaultRenderer
   }
 
+-- | Some defaults, providing only dummy implementations for state, event and
+-- | picture as `Unit`.
 defaultConfig :: forall st evt pic bind eff.
-  Default st => Default evt => Default pic =>
-  Config st evt pic bind ( console :: CONSOLE | eff)
+  Config Unit Unit Unit bind ( console :: CONSOLE | eff)
 defaultConfig =
   { canvasId : def
   , app : defaultApp
@@ -194,6 +207,7 @@ defaultConfig =
   , handleError : errMessage >>> log
   }
 
+-- | Default shader implementations that do nothing but they compile.
 defaultShaders :: forall bind. Shaders bind
 defaultShaders =
   { vertex : defaultShader
