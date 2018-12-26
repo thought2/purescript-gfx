@@ -7,6 +7,11 @@ module Gfx
   , class Default
   , run
   , Err
+  , errMessage
+  , defaultApp
+  , defaultConfig'
+  , defaultConfig
+  , defaultRenderer
   )
 where
 
@@ -15,11 +20,12 @@ import Prelude
 import Control.Monad.Aff (Aff, launchAff)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (throw, message, try)
 import Control.Monad.Except.Trans (ExceptT, runExceptT)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(Right, Left))
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (wrap)
 import Graphics.WebGLAll (Shaders(Shaders), WebGLProg, WebGl, WebGLContext)
 import Graphics.WebGLAll as WebGl
@@ -46,26 +52,33 @@ type RenderFn pic bind eff =
   -> pic
   -> Eff (webgl :: WebGl | eff) Unit
 
--- |
-type Config st evt pic bind eff =
+-- | WebGl related errors.
+data Err = ErrRun String | ErrShaders String | ErrAsync
+
+-- | Convert `Err` to human readable error message.
+errMessage :: Err -> String
+errMessage err =
+  case err of
+    ErrRun msg -> format "ErrRun" (Just msg)
+    ErrShaders msg -> format "ErrShader" (Just msg)
+    ErrAsync -> format "ErrAsync" Nothing
+  where
+    format name msg = "ERROR: " <> name <> "\n" <> maybe "" id msg
+
+-- | Config used for `run` (Error handling: `ExceptT`).
+type Config' st evt pic bind eff =
   { canvasId :: String
   , app :: App st evt pic
   , renderer :: Renderer pic bind eff
   }
 
--- | WebGl related errors.
-data Err = ErrRun String | ErrShaders String | ErrAsync
-
--- | Run the app.
-run :: forall st evt pic eff bind.
-  Config st evt pic bind eff
-  -> (Err -> Eff ( webgl :: WebGl | eff) Unit)
-  -> Eff ( webgl :: WebGl | eff ) Unit
-run config handleError = map (const unit) $ launchAff $ do
-  result <- runExceptT $ run' config
-  case result of
-    Left err -> liftEff $ handleError err
-    Right _ -> pure unit
+-- | config used for `run` (Error handling: callback).
+type Config st evt pic bind eff =
+  { canvasId :: String
+  , app :: App st evt pic
+  , renderer :: Renderer pic bind eff
+  , handleError :: Err -> Eff ( webgl :: WebGl | eff) Unit
+  }
 
 -- | Run the app as `ExceptT`.
 run' :: forall st evt pic bind eff.
@@ -82,6 +95,16 @@ run'
       render bindings (view init)
     where
       sigState = foldp update init signal
+
+-- | Run the app.
+run :: forall st evt pic eff bind.
+  Config st evt pic bind eff
+  -> Eff ( webgl :: WebGl | eff ) Unit
+run config = map (const unit) $ launchAff $ do
+  result <- runExceptT $ run' config
+  case result of
+    Left err -> liftEff $ config.handleError err
+    Right _ -> pure unit
 
 --|
 runWebGL :: forall eff.
@@ -133,3 +156,39 @@ instance defaultShaders :: Default (Shaders { | bind }) where
   def = Shaders defShader defShader
     where
       defShader = "void main(void) {}"
+
+instance defaultString :: Default String where
+  def = ""
+
+defaultApp :: forall st evt pic.
+  Default st => Default evt => Default pic => App st evt pic
+defaultApp =
+  { init : def
+  , update : def
+  , view : def
+  , signal : def
+  }
+
+defaultRenderer :: forall pic bind eff. Renderer pic bind eff
+defaultRenderer =
+  { render : def
+  , shaders : def
+  }
+
+defaultConfig' :: forall st evt pic bind eff.
+  Default st => Default evt => Default pic => Config' st evt pic bind eff
+defaultConfig' =
+  { canvasId : def
+  , app : defaultApp
+  , renderer : defaultRenderer
+  }
+
+defaultConfig :: forall st evt pic bind eff.
+  Default st => Default evt => Default pic =>
+  Config st evt pic bind ( console :: CONSOLE | eff)
+defaultConfig =
+  { canvasId : def
+  , app : defaultApp
+  , renderer : defaultRenderer
+  , handleError : errMessage >>> log
+  }
