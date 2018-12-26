@@ -18,4 +18,4 @@ build-examples: install build
 	$(MAKE) build-example EXAMPLE=Minimal
 	$(MAKE) build-example EXAMPLE=BackgroundColor
 	$(MAKE) build-example EXAMPLE=Points
-	$(MAKE) build-example EXAMPLE=Shaders
+	$(MAKE) build-example EXAMPLE=Animation
